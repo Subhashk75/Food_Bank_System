@@ -1,87 +1,51 @@
 const connection = require('../config/connection');
-const { Product, Transaction } = require('../models');
-const { restoreTransaction } = require('../controllers/transactionController')
+const { Product, Transaction, Category } = require('../models');
 
-connection.on('error', (err) => err);
+connection.on('error', (err) => console.error(err));
+
+const mockCategories = [
+    { name: 'Grains' },
+    { name: 'Dairy' },
+    { name: 'Vegetables' },
+    { name: 'Fruits' },
+    { name: 'Protein' },
+    { name: 'Beverages' }
+];
 
 const mockProducts = [
-
-    { name: 'Product A', description: 'Description for Product A', quantity: 0 },
-    { name: 'Product B', description: 'Description for Product B', quantity: 0 },
-    { name: 'Product C', description: 'Description for Product C', quantity: 0 },
-    { name: 'Product D', description: 'Description for Product D', quantity: 0 },
-    { name: 'Product E', description: 'Description for Product E', quantity: 0 },
+    { name: 'Rice', description: 'White rice', quantity: 100 },
+    { name: 'Milk', description: 'Whole milk', quantity: 50 },
+    { name: 'Carrots', description: 'Fresh carrots', quantity: 75 },
+    { name: 'Apples', description: 'Red apples', quantity: 60 },
+    { name: 'Chicken', description: 'Boneless chicken breast', quantity: 40 }
 ];
-const mockTransactions = [
-    {
-        purpose: 'Receive',
-        unit: 1,
-        batchSize: 'Small',
-        operation: 'Receive'
-    },
-    {
-        purpose: 'Distribute',
-        unit: 3,
-        batchSize: 'Large',
-        operation: 'Distribute'
-    },
-
-    {
-        purpose: 'Distribute',
-        unit: 3,
-        batchSize: 'Large',
-        operation: 'Distribute'
-    },
-
-];
-
-const buildInventory = (product, quantity) => ({ ...product, quantity })
-const buildTransaction = (baseTransaction, product) => ({ ...baseTransaction, product })
 
 connection.once('open', async () => {
-    console.log('connected');
+    console.log('Connected to database');
     try {
         await Product.deleteMany();
-        await Transaction.deleteMany();
+        await Category.deleteMany();
 
-        const createdProducts = await Product.create(mockProducts);
+        const createdCategories = await Category.insertMany(mockCategories);
 
-        const batch1 = [
-            buildInventory(createdProducts[0], 100),
-            buildInventory(createdProducts[1], 100),
-            buildInventory(createdProducts[2], 100),
-            buildInventory(createdProducts[3], 100),
-            buildInventory(createdProducts[4], 100)
-        ];
-        const batch2 = [
-            buildInventory(createdProducts[0], 4),
-            buildInventory(createdProducts[3], 12)
-        ];
-        const batch3 = [
-            buildInventory(createdProducts[1], 4),
-            buildInventory(createdProducts[2], 8),
-            buildInventory(createdProducts[4], 12)
-        ];
+        // Assign products to categories dynamically
+        const categoryMap = {};
+        createdCategories.forEach(cat => categoryMap[cat.name] = cat._id);
 
-        const transactions = await Transaction.create([
-            buildTransaction(mockTransactions[0], batch1),
-            buildTransaction(mockTransactions[1], batch2),
-            buildTransaction(mockTransactions[2], batch3)
-        ]);
+        const productsWithCategory = mockProducts.map((product, index) => ({
+            ...product,
+            category: categoryMap[Object.keys(categoryMap)[index]]
+        }));
+
+        const createdProducts = await Product.insertMany(productsWithCategory);
+
+        console.log('Created Categories:', createdCategories);
+        console.log('Created Products:', createdProducts);
         
-        console.log(createdProducts);
-        
-        console.log('mock1');
-        console.log(transactions[0].product);
-        console.log('mock2');
-        console.log(transactions[1].product);
-        await restoreTransaction();// -4 6 -4 12 12
-
-        console.log('Database seeded with mock data.');
+        console.log('Database seeded successfully.');
     } catch (error) {
         console.error('Error seeding database:', error);
     } finally {
-        // Close the connection
         process.exit(0);
     }
 });

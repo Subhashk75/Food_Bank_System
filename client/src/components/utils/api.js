@@ -1,51 +1,52 @@
-const urldis = './api/distribution/';
-const urlin = './api/inventory/';
+const urldis = 'http://localhost:3001/api/v1/distribution';
+const urlin = 'http://localhost:3001/api/v1/inventory';
 
 export const sendDataDistribution = (data) =>
-    fetch(urldis, {
+    fetch(`${urldis}/`, { // Ensure trailing slash or not based on backend setup
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify(data),
-    }).then((response) => response.json())
-        .then((data) => {
-        })
-        .catch((error) => {
-            console.error('Error:', error);
-        });
+    }).then((response) => {
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        return response.json();
+    })
+    .catch((error) => {
+        console.error('Error:', error);
+    });
+
 export const sendDataInventory = (data) =>
-    fetch(urlin, {
+    fetch(`${urlin}/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify(data),
-    }).then((response) => response.json())
-        .then((data) => {
-        })
-        .catch((error) => {
-            console.error('Error:', error);
-        });
+    }).then((response) => {
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        return response.json();
+    })
+    .catch((error) => {
+        console.error('Error:', error);
+    });
 
 export const getDataInventory = () =>
-    fetch(urldis, {
+    fetch(`${urlin}/`, { 
         method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    }).then((response) => response.json())
-        .catch((error) => {
-            console.error('Error:', error);
-        });
+        headers: { 'Content-Type': 'application/json' },
+    }).then(response => {
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        return response.json();
+    })
+    .catch(error => console.error('Error:', error));
 
 export const getDataDistribution = () =>
-    fetch(urlin, {
+    fetch(`${urldis}/`, {
         method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    }).then((response) => response.json())
-        .catch((error) => {
-            console.error('Error:', error);
-        });
+        headers: { 'Content-Type': 'application/json' },
+    }).then(response => {
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        return response.json();
+    })
+    .catch(error => console.error('Error:', error));

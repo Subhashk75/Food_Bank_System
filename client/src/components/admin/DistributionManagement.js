@@ -1,159 +1,132 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, gql } from '@apollo/client';
+import axios from 'axios';
 import { Box, Flex, Input, Button, Text, List, ListItem, useColorModeValue } from '@chakra-ui/react';
 import Header from '../layout/Header';
 import Sidebar from '../layout/Sidebar';
 import Footer from '../layout/Footer';
 import { useNavigate } from "react-router-dom";
-import { UPDATE_PRODUCT_QUANTITY, CREATE_TRANSACTION } from "../utils/mutations";
-import { sendDataDistribution } from "../utils/api";
 
-const FIND_PRODUCT = gql`
-  query GetProducts {
-    products {
-      name,
-      _id
-    }
-  }
-`;
+const API_URL = "http://localhost:3001/api/v1"; // Adjust based on your backend
 
 function Distribution() {
   const [products, setProducts] = useState([]);
   const [productName, setProductName] = useState('');
-  const [productId, setIdProduct] = useState('');
+  const [productId, setProductId] = useState('');
   const [productQuantity, setProductQuantity] = useState('');
   const [unit, setUnit] = useState('');
   const [purpose, setPurpose] = useState('');
   const [batch, setBatch] = useState('');
-
+  const [suggestions, setSuggestions] = useState([]);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
   const [doneMessage, setDoneMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
   const bg = useColorModeValue("white", "gray.800");
   const color = useColorModeValue("gray.700", "gray.200");
-  const [suggestions, setSuggestions] = useState([]);
-  const { data } = useQuery(FIND_PRODUCT);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await axios.get(`${API_URL}/products`); // Updated to /products
+        console.log("respone get in Distributionmangement file and inside fectch Prodout ")
+
+        setSuggestions(response.data);
+      } catch (err) {
+        console.log(" error get respone get in Distributionmangement file and inside fectch Prodout ")
+
+        setErrorMessage("Failed to fetch products.");
+      }
+    };
+    fetchProducts();
+  }, []);
 
   const handleProductNameChange = (e) => {
     const value = e.target.value;
-    const thisId = e.target.id;
     setProductName(value);
-    setIdProduct(thisId);
 
-    if (value && data) {
-      const filteredProducts = data.products.filter((product) =>
-        product.name.toLowerCase().startsWith(value.toLowerCase())
+    if (value) {
+      const filteredProducts = suggestions.filter((product) =>
+        product.name.toLowerCase().includes(value.toLowerCase())
       );
-      setSuggestions(filteredProducts.map((product) => { return { name: product.name, _id: product._id } }));
+      setSuggestions(filteredProducts);
     } else {
-      setSuggestions([]);
+      setSuggestions([]); // Reset suggestions when input is cleared
     }
   };
 
   const handleSuggestionClick = (suggestion) => {
     setProductName(suggestion.name);
-    setIdProduct(suggestion._id);
+    setProductId(suggestion._id);
     setSuggestions([]);
   };
 
   const handleAddProduct = () => {
-
-    if (productName && productQuantity && productId) {
-      setProducts([...products, { name: productName, quantity: productQuantity, _id: productId }]);
-      console.log(products);
-      setProductName('');
-      setProductQuantity('');
-      setIdProduct('');
+    if (!productName || !productQuantity || !productId) {
+      setErrorMessage('Please fill out all fields before adding.');
+      return;
     }
+
+    setProducts([...products, { name: productName, quantity: parseInt(productQuantity), _id: productId }]);
+    setProductName('');
+    setProductQuantity('');
+    setProductId('');
+    setErrorMessage('');
   };
-
-  useEffect(() => {
-    if (doneMessage) {
-      const timer = setTimeout(() => {
-        setDoneMessage('');
-        if (products && unit && purpose && batch) {
-          setProductName('');
-          setProductQuantity('');
-          setIdProduct('');
-          setUnit('');
-          setPurpose('');
-          setBatch('');
-          setIsButtonDisabled(false);
-          navigate('/dashboard');
-        }
-      }, 3000);
-
-      return () => { clearTimeout(timer); };
-    }
-  }, [doneMessage]);
-
-  useEffect(() => {
-    if (errorMessage) {
-      const timer = setTimeout(() => {
-        setErrorMessage('');
-      }, 3000);
-
-      return () => { clearTimeout(timer); };
-    }
-  }, [errorMessage]);
-
 
   const handleDistribute = async () => {
-    // Loop through products, multiply by the number of families, and update the quantity
-
-    if (products && unit && purpose && batch) {
-      // console.log(products)
-      setIsButtonDisabled(true);
-
-      const transaction = {
-        product: products,
-        purpose: purpose,
-        unit: unit,
-        batchSize: batch
-      }
-
-      await sendDataDistribution(transaction);
-
-
-      setDoneMessage('Transaction submitted successfully!');
-    } else {
-      setErrorMessage('Complete the transaction information before submiting');
+    if (products.length === 0 || !unit || !purpose || !batch) {
+      setErrorMessage('Complete all fields before submitting.');
+      return;
     }
 
-  };
+    setIsButtonDisabled(true);
+    setErrorMessage('');
 
-  const fcontstyle = {
-    display: "flex",
-    flexWrap: "wrap",
-    fontSize: "30px"
-  };
+    const transaction = {
+      operation: "Distribute", // Added operation for distribution
+      products,
+      purpose,
+      unit: parseInt(unit),
+      batchSize: batch
+    };
 
-  const right = {
-    padding: "25px",
-    flex: "80%"
-  }
+    try {
+      await axios.post(`${API_URL}/distribution`, transaction);
+      console.log("respone get in Distributionmangement file and inside handleDistribute  ")
+
+      setDoneMessage('Transaction submitted successfully!');
+      setTimeout(() => {
+        setProducts([]);
+        setUnit('');
+        setPurpose('');
+        setBatch('');
+        setIsButtonDisabled(false);
+        navigate('/dashboard');
+      }, 3000);
+    } catch (err) {
+      setErrorMessage('Error submitting transaction.');
+      setIsButtonDisabled(false);
+    }
+  };
 
   return (
     <Flex direction="column" minHeight="100vh">
       <Header />
-
-      <Flex as="main" style={fcontstyle} flex="1" p={4}>
+      <Flex as="main" flex="1" p={4}>
         <Sidebar />
-        <Flex style={right} bg={bg} borderRadius="md" flex="1" color={color} direction="row">
+        <Flex flex="1" p={5} bg="gray.100" borderRadius="md">
           <Box flex="1" bg={bg} borderRadius="md" marginEnd='5px'>
             <Text mb={4}>Add Products:</Text>
             <Input
               placeholder="Type product name"
               value={productName}
-              id={productId}
               onChange={handleProductNameChange}
             />
             {suggestions.length > 0 && (
               <List>
-                {suggestions.map((suggestion, index) => (
-                  <ListItem key={index} id={suggestion._id} onClick={() => handleSuggestionClick(suggestion)}>
+                {suggestions.map((suggestion) => (
+                  <ListItem key={suggestion._id} onClick={() => handleSuggestionClick(suggestion)}>
                     {suggestion.name}
                   </ListItem>
                 ))}
@@ -169,7 +142,7 @@ function Distribution() {
             <Button onClick={handleAddProduct} mt={2}>
               Add Product
             </Button>
-            <List spacing={3}>
+            <List spacing={3} mt={3}>
               {products.map((product, index) => (
                 <ListItem key={index}>
                   {product.name} - Quantity: {product.quantity}
@@ -177,45 +150,20 @@ function Distribution() {
               ))}
             </List>
           </Box>
+
           <Box flex="1" bg={bg} borderRadius="md">
             <Text mb={4}>Transaction Info:</Text>
-            <Input
-              placeholder="Enter number of units"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              type="number"
-            />
-            <Input
-              placeholder="Purpose"
-              value={purpose}
-              onChange={(e) => setPurpose(e.target.value)}
-              type="text"
-            />
-            <Input
-              placeholder="Batch Size"
-              value={batch}
-              onChange={(e) => setBatch(e.target.value)}
-              type="text"
-            />
+            <Input placeholder="Enter number of units" value={unit} onChange={(e) => setUnit(e.target.value)} type="number" />
+            <Input placeholder="Purpose" value={purpose} onChange={(e) => setPurpose(e.target.value)} type="text" mt={2} />
+            <Input placeholder="Batch Size" value={batch} onChange={(e) => setBatch(e.target.value)} type="text" mt={2} />
             <Button onClick={handleDistribute} mt={2} disabled={isButtonDisabled}>
               Distribute
             </Button>
-            {
-              errorMessage && (
-                <Text mb={4} className='error-text'>{errorMessage}</Text>
-              )
-            }
-            {
-              doneMessage && (
-                <Text mb={4} className='done-text'>{doneMessage}</Text>
-              )
-            }
-
-
+            {errorMessage && <Text color="red.500">{errorMessage}</Text>}
+            {doneMessage && <Text color="green.500">{doneMessage}</Text>}
           </Box>
         </Flex>
       </Flex>
-
       <Footer />
     </Flex>
   );

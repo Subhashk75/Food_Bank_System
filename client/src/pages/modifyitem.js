@@ -1,39 +1,15 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, gql } from '@apollo/client';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { InputGroup, Input, InputLeftAddon, Button, Flex, Box, List, ListItem, useColorModeValue } from '@chakra-ui/react';
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
 import Footer from '../components/layout/Footer';
-import { updateProduct } from '../components/utils/mutations';
 
-const GET_PRODUCTS = gql`
-  query GetProducts {
-    products {
-      name
-    }
-  }
-`;
-
-const GET_PRODUCT_BY_NAME = gql`
-  query GetProductByName($name: String!) {
-    product(name: $name) {
-      _id
-      name
-      description
-      image
-      quantity
-      category
-    }
-  }
-`;
+const API_URL = "http://localhost:3001/api/v1/products"; // Updated Backend API route
 
 function ModifyItem() {
-  const bg = useColorModeValue("white", "gray.800"); // Define background color
-  const color = useColorModeValue("gray.700", "gray.200"); // Define text color
-
-  const inputLeftAddonStyle = {
-    width: '150px',
-  };
+  const bg = useColorModeValue("white", "gray.800"); 
+  const color = useColorModeValue("gray.700", "gray.200"); 
 
   const [searchName, setSearchName] = useState('');
   const [inputValues, setInputValues] = useState({
@@ -45,24 +21,27 @@ function ModifyItem() {
     category: '',
   });
 
-  const { loading, error, data } = useQuery(GET_PRODUCT_BY_NAME, {
-    variables: { name: searchName },
-    skip: !searchName,
-  });
-
-  const [modifyProductMutation] = useMutation(updateProduct);
+  const [products, setProducts] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
-  const { loading: loadingProducts, data: productsData } = useQuery(GET_PRODUCTS);
+
+  useEffect(() => {
+    axios.get(`${API_URL}`)
+      .then(response => {
+        setProducts(response.data);
+        console.log("respone get in modifyItem file and inside useEffect  fectch Prodout ")
+      })
+      .catch(error => console.error("Error fetching products:", error));
+  }, []);
 
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchName(value);
 
-    if (value && productsData) {
-      const filteredProducts = productsData.products.filter((product) =>
+    if (value) {
+      const filteredProducts = products.filter(product =>
         product.name.toLowerCase().startsWith(value.toLowerCase())
       );
-      setSuggestions(filteredProducts.map((product) => product.name));
+      setSuggestions(filteredProducts.map(product => product.name));
     } else {
       setSuggestions([]);
     }
@@ -72,55 +51,71 @@ function ModifyItem() {
     setSearchName(suggestion);
     setSuggestions([]);
   };
-  
+
   const handleSearchClick = () => {
-    if (data && data.product) {
-      setInputValues(data.product);
-    }
+    axios.get(`http://localhost:3001/api/v1/searchProduct?name=${searchName}`)
+    .then(response => {
+        if (response.data) {
+          setInputValues(response.data);
+          console.log("respone get in modifyItem file and inside handleSearchClick ");
+        }
+      })
+      .catch(error => console.error('Error fetching product:', error));
+
   };
+
   const handleInputChange = (fieldName, value) => {
-    setInputValues((prevValues) => ({
+    setInputValues(prevValues => ({
       ...prevValues,
       [fieldName]: value,
     }));
   };
-
-  const handleModifyItem = async () => {
-    try {
-      const { data } = await modifyProductMutation({
-        variables: {
-          ...inputValues,
-          quantity: parseInt(inputValues.quantity),
-        },
-      });
-      console.log('Product modified:', data.modifyProduct);
-    } catch (error) {
-      console.error('Error modifying product:', error);
-    }
-  };
-
-  const buttonStyle = {
-    width: '100px',
-  };
-
-  const fcontstyle = {
-    display: "flex",
-    flexWrap: "wrap",
-    fontSize: "30px"
-  };
-
-  const right = {
-    padding: "25px",
-    flex: "80%"
+ // handle Modify item 
+ const handleModifyItem = async () => {
+  if (!inputValues.id) {
+    alert("No product selected for modification.");
+    return;
   }
+
+  try {
+    // Fetch category ID if inputValues.category is a name instead of an ID
+    const categoryResponse = await axios.get(`http://localhost:3001/api/v1/categories`);
+    const foundCategory = categoryResponse.data.find(cat => cat.name === inputValues.category);
+    console.log("respone get in modifyItem file and inside handleModifyItem  ")
+
+    if (!foundCategory) {
+      alert("Invalid category selected.");
+      return;
+    }
+
+    const updatedProduct = {
+      name: inputValues.name,
+      description: inputValues.description,
+      image: inputValues.image,
+      quantity: parseInt(inputValues.quantity, 10),
+      category: foundCategory._id, // Ensure the category is sent as an ObjectId
+    };
+
+    await axios.put(`http://localhost:3001/api/v1/products/${inputValues.id}`, updatedProduct);
+    console.log("respone get in modifyItem file and inside handleSearchClick after put rest api ")
+
+    alert("Product modified successfully!");
+  } catch (error) {
+    console.log(" error respone get in modifyItem file and inside handleSearchClick ")
+
+    console.error("Error modifying product:", error);
+    alert("Error modifying product. Check console for details.");
+  }
+};
+
+  
 
   return (
     <Flex direction="column" minHeight="100vh">
       <Header />
-
-      <Flex as="main" style={fcontstyle} flex="1" p={4}>
+      <Flex as="main" flex="1" p={4}>
         <Sidebar />
-        <Box style={right} bg={bg} borderRadius="md" flex="1" color={color}>
+        <Box flex="1" ml={4} p={5} bg={bg} borderRadius="md" color={color}>
           <InputGroup>
             <InputLeftAddon children='Search by Name' />
             <Input
@@ -141,55 +136,33 @@ function ModifyItem() {
             </List>
           )}
 
-          {data && data.product && (
+          {inputValues.id && (
             <Box mt={4}>
               <InputGroup>
                 <InputLeftAddon children='Name' />
-                <Input
-                  value={inputValues.name}
-                  onChange={(e) => handleInputChange('name', e.target.value)}
-                />
+                <Input value={inputValues.name} onChange={(e) => handleInputChange('name', e.target.value)} />
               </InputGroup>
               <InputGroup mt={2}>
                 <InputLeftAddon children='Description' />
-                <Input
-                  value={inputValues.description}
-                  onChange={(e) => handleInputChange('description', e.target.value)}
-                />
+                <Input value={inputValues.description} onChange={(e) => handleInputChange('description', e.target.value)} />
               </InputGroup>
               <InputGroup mt={2}>
                 <InputLeftAddon children='Image' />
-                <Input
-                  value={inputValues.image}
-                  onChange={(e) => handleInputChange('image', e.target.value)}
-                />
+                <Input value={inputValues.image} onChange={(e) => handleInputChange('image', e.target.value)} />
               </InputGroup>
               <InputGroup mt={2}>
                 <InputLeftAddon children='Quantity' />
-                <Input
-                  value={inputValues.quantity}
-                  onChange={(e) => handleInputChange('quantity', e.target.value)}
-                  type="number"
-                />
+                <Input value={inputValues.quantity} onChange={(e) => handleInputChange('quantity', e.target.value)} type="number" />
               </InputGroup>
               <InputGroup mt={2}>
                 <InputLeftAddon children='Category' />
-                <Input
-                  value={inputValues.category}
-                  onChange={(e) => handleInputChange('category', e.target.value)}
-                />
+                <Input value={inputValues.category} onChange={(e) => handleInputChange('category', e.target.value)} />
               </InputGroup>
-              <Button mt={2} onClick={handleModifyItem}>
-                Modify Item
-              </Button>
+              <Button mt={2} onClick={handleModifyItem}>Modify Item</Button>
             </Box>
           )}
-
-          {loading && <p>Loading...</p>}
-          {error && <p>Error: {error.message}</p>}
         </Box>
       </Flex>
-
       <Footer />
     </Flex>
   );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery, gql } from "@apollo/client";
+import axios from 'axios';
 import {
   Box,
   Flex,
@@ -9,57 +9,64 @@ import {
   StatNumber,
   StatHelpText,
   Stack,
-  List,
-  ListItem,
-  ListIcon,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
   useColorModeValue,
   useBreakpointValue
 } from "@chakra-ui/react";
-import { Table, Thead, Tbody, Tr, Th, Td } from '@chakra-ui/react';
-
-import {
-  LineChart,
-  Line,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-} from "recharts";
 import { MdCallMade, MdCallReceived } from "react-icons/md";
+import { useNavigate } from "react-router-dom";
 import Header from "../layout/Header";
 import Sidebar from "../layout/Sidebar";
 import Footer from "../layout/Footer";
-import { useNavigate } from "react-router-dom";
 import Auth from "../utils/auth";
-import { getDataDistribution } from "../utils/api";
-
-const DASHBOARD_DATA = gql`
-  query GetDashboardData {
-    products {
-      name
-      quantity
-    }
-    categories {
-      name
-      products {
-        name
-        quantity
-      }
-    }
-  }
-`;
 
 function Dashboard() {
-  const { loading: Ploading, error: Perror, data: Pdata } = useQuery(DASHBOARD_DATA);
   const [data, setData] = useState([]);
-  const [error, setError] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [productIndex, setProductIndex] = useState(null);
-  const [Clicked, setClicked] = useState(false);
-  const isMobile = useBreakpointValue({ base: true, md: false }); // Determine if mobile or not
+  const [clicked, setClicked] = useState(false);
+  const isMobile = useBreakpointValue({ base: true, md: false });
+  const navigate = useNavigate();
+  const bg = useColorModeValue("white", "gray.800");
+
+  useEffect(() => {
+    if (!Auth.loggedIn()) {
+      navigate("/");
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [inventoryRes, productsRes, categoriesRes] = await Promise.all([
+          axios.get("/api/v1/inventory"),
+          axios.get("/api/v1/products"),
+          axios.get("/api/v1/getCategories")
+        ]);
+
+        setData(inventoryRes.data);
+        setProducts(productsRes.data);
+        setCategories(categoriesRes.data);
+        setLoading(false);
+      } catch (err) {
+        setError(err);
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const handleClick = (index) => {
-    if (index != productIndex) {
+    if (index !== productIndex) {
       setClicked(true);
       setProductIndex(index);
     } else {
@@ -68,77 +75,20 @@ function Dashboard() {
     }
   };
 
-  const navigate = useNavigate();
-  const bg = useColorModeValue("white", "gray.800");
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error.message}</p>;
 
-  const fetchData = async () => {
-    try {
-      const inventoryData = await getDataDistribution();
-      setData(inventoryData);
-      console.log(inventoryData);
-      setLoading(false);
-    } catch (error) {
-      //console.error('Error:', error);
-      setError(error);
-      setLoading(false);
-    }
-  };
+  const totalProducts = products.length;
+  const totalCategories = categories.length;
+  const totalQuantity = products.reduce((sum, product) => sum + product.quantity, 0);
 
-  useEffect(() => {
-    if (!Auth.loggedIn()) {
-      console.log("error");
-      navigate("/");
-    }
-  }, [navigate]);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  if (Ploading) return <p>Loading...</p>;
-  if (Perror) return <p>Error: {Perror.message}</p>;
-
-  const totalProducts = Pdata.products.length;
-  const totalCategories = Pdata.categories.length;
-  const totalQuantity = Pdata.products.reduce((sum, product) => sum + product.quantity, 0);
-
-
-
-
-  const fcontstyle = {
-    display: "flex",
-    flexWrap: "wrap",
-    fontSize: "30px",
-    textAlign: "center"
-  };
-
-  const right = {
-    padding: "25px",
-    flex: "80%"
-  }
-
-  const table_text = {
-    fontSize: "20px",
-  }
-  const table_product_text = {
-    fontSize: "14px",
-  }
-  const ReceiveIcon = {
-    color: 'green'
-  };
-  const DistributeIcon = {
-    color: 'red'
-  };
-  const cursor = {
-    cursor: "pointer"
-  };
   return (
     <Flex direction="column" minHeight="100vh">
       <Header />
       <Flex as="main" className='main' flex="1" p={1}>
         <Sidebar />
-        <Box style={right} bg={bg} borderRadius="md" flex="1">
-          <Stack spacing={2}>
+        <Box bg={bg} borderRadius="md" flex="1" p={5}>
+          <Stack spacing={4}>
             <Flex justify="space-between">
               <Stat>
                 <StatLabel>Total Products</StatLabel>
@@ -157,143 +107,91 @@ function Dashboard() {
               </Stat>
             </Flex>
             <Box overflowX="auto">
-
-              {data ? (<Table variant="simple" m={0} p={0}>
-                <Thead>
-                  <Tr>
-                    <Th>Op.</Th>
-                    {!isMobile &&
-                      <React.Fragment>
-                        <Th>Operation</Th>
+              {data.length > 0 ? (
+                <Table variant="simple">
+                  <Thead>
+                    <Tr>
+                      <Th>Op.</Th>
+                      {!isMobile && <Th>Operation</Th>}
+                      <Th>Products No.</Th>
+                      <Th>Units</Th>
+                      <Th>Total</Th>
+                      {!isMobile && (
+                        <>
+                          <Th>Purpose</Th>
+                          <Th>BatchSize</Th>
+                          <Th>Date</Th>
+                        </>
+                      )}
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {data.map((transaction, index) => (
+                      <React.Fragment key={index}>
+                        <Tr onClick={() => handleClick(index)} style={{ cursor: "pointer" }}>
+                          <Td>
+                            {transaction.operation === "Receive" ? (
+                              <MdCallReceived color="green" />
+                            ) : (
+                              <MdCallMade color="red" />
+                            )}
+                          </Td>
+                          {!isMobile && <Td>{transaction.operation}</Td>}
+                          <Td>{transaction.product.length}</Td>
+                          <Td>{transaction.unit}</Td>
+                          <Td>
+                            {transaction.product
+                              .map(product => product.quantity * transaction.unit)
+                              .reduce((sum, quantity) => sum + quantity, 0)}
+                          </Td>
+                          {!isMobile && (
+                            <>
+                              <Td>{transaction.purpose}</Td>
+                              <Td>{transaction.batchSize}</Td>
+                              <Td>{new Date(transaction.createdAt).toLocaleDateString()}</Td>
+                            </>
+                          )}
+                        </Tr>
+                        {clicked && productIndex === index && (
+                          <OpenProductList data={transaction.product} unit={transaction.unit} />
+                        )}
                       </React.Fragment>
-                    }
-                    <Th>Products No.</Th>
-                    <Th>Units</Th>
-                    <Th>Total</Th>
-                    {!isMobile &&
-                      <React.Fragment>
-                        <Th>Purpose</Th>
-                        <Th>BatchSize</Th>
-                        <Th>Date</Th>
-                      </React.Fragment>
-                    }
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {data.map((transaction, index) => (
-                    <React.Fragment key={index}>
-                      <Tr key={index} onClick={() => handleClick(index)} style={cursor}>
-
-                        <Td style={table_text}>
-                          {transaction.operation === "Receive" ? <MdCallReceived style={ReceiveIcon} /> : <MdCallMade style={DistributeIcon} />}
-                        </Td>
-                        {!isMobile &&
-                          <React.Fragment>
-                            <Td style={table_text}>
-                              {transaction.operation}
-                            </Td>
-                          </React.Fragment>
-                        }
-                        <Td style={table_text}>
-                          {transaction.product.length}
-                        </Td>
-                        <Td style={table_text}>
-                          {transaction.unit}
-                        </Td>
-                        <Td style={table_text}>
-                          {transaction.product.map(product => product.quantity * (transaction.unit)).reduce((sum, quantity) => sum + quantity, 0)}
-                        </Td>
-                        {!isMobile &&
-                          <React.Fragment>
-                            <Td style={table_text}>
-                              {transaction.purpose}
-                            </Td>
-                            <Td style={table_text}>
-                              {transaction.batchSize}
-                            </Td>
-                            <Td style={table_text}>
-                              {new Date(transaction.createdAt).toLocaleDateString()}
-                            </Td>
-                          </React.Fragment>
-                        }
-
-                      </Tr>
-                      {Clicked && productIndex == index && <OpenProductList data={transaction.product} unit={transaction.unit} />
-                      }
-                    </React.Fragment>
-                  ))}
-                </Tbody>
-              </Table>) : (false)}
-              {loading && <Text mb={4}>Loading...</Text>}
-              {error && <Text mb={4}>Error: {error.message}</Text>}
+                    ))}
+                  </Tbody>
+                </Table>
+              ) : (
+                <Text>No transactions available</Text>
+              )}
+              {loading && <Text>Loading...</Text>}
+              {error && <Text>Error: {error.message}</Text>}
             </Box>
           </Stack>
-        </Box >
-      </Flex >
+        </Box>
+      </Flex>
       <Footer />
-    </Flex >
+    </Flex>
   );
 }
 
-function OpenProductList(props) {
-  console.log(props.data);
-  const isMobile = useBreakpointValue({ base: true, md: false }); // Determine if mobile or not
-
-  const table_product_text = {
-    fontSize: "14px",
-    lineHeight: "1",
-    whiteSpace: "nowrap",
-    padding: "6px 10px",
-  }
-  const table_product_text_title = {
-    fontSize: "14px",
-    fontWeight: "bold",
-    lineHeight: "1",
-    padding: "6px 10px",
-  }
-
+function OpenProductList({ data, unit }) {
   return (
-    <React.Fragment>
+    <>
       <Tr>
-        {!isMobile &&
-          <React.Fragment>
-            <Td ></Td>
-          </React.Fragment>}
-        <Td style={table_product_text_title}>
-          Name
-        </Td>
-        <Td style={table_product_text_title}>
-          Quantity
-        </Td>
-        <Td style={table_product_text_title}>
-          Units
-        </Td>
-        <Td style={table_product_text_title}>
-          Total
-        </Td>
+        <Td><strong>Name</strong></Td>
+        <Td><strong>Quantity</strong></Td>
+        <Td><strong>Units</strong></Td>
+        <Td><strong>Total</strong></Td>
       </Tr>
-      {props.data.map((product, index) => (
+      {data.map((product, index) => (
         <Tr key={index}>
-          {!isMobile &&
-            <React.Fragment>
-              <Td ></Td>
-            </React.Fragment>}
-          <Td style={table_product_text}>
-            {product.name}
-          </Td>
-          <Td style={table_product_text}>
-            {product.quantity}
-          </Td>
-          <Td style={table_product_text}>
-            {props.unit}
-          </Td>
-          <Td style={table_product_text}>
-            {product.quantity * props.unit}
-          </Td>
+          <Td>{product.name}</Td>
+          <Td>{product.quantity}</Td>
+          <Td>{unit}</Td>
+          <Td>{product.quantity * unit}</Td>
         </Tr>
       ))}
-    </React.Fragment>
+    </>
   );
 }
-export default Dashboard;
 
+export default Dashboard;

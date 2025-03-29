@@ -1,137 +1,102 @@
-import React from 'react';
-import { useMutation, useQuery } from '@apollo/client';
-import { gql } from '@apollo/client';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import {
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  TableContainer,
+  Box,
   Button,
   Flex,
-  Box,
+  Image,
+  IconButton,
+  SimpleGrid,
+  Text,
   useColorModeValue,
-  Icon,
-  useBreakpointValue
+  useBreakpointValue,
+  VStack,
+  HStack
 } from '@chakra-ui/react';
 import { Link } from 'react-router-dom';
 import { FaTrash } from 'react-icons/fa';
+import { MdOutlineModeEdit } from 'react-icons/md';
 import Header from '../layout/Header';
 import Sidebar from '../layout/Sidebar';
 import Footer from '../layout/Footer';
-import { MdOutlineModeEdit } from 'react-icons/md';
 
-const GET_PRODUCTS = gql`
-query {
-  products {
-    _id
-    name
-    description
-    image
-    quantity
-    }
-  }
-`;
-
-//import mutation for deleting a product
-const DELETE_PRODUCT = gql`
-  mutation DeleteProduct($id: ID!) {   
-    deleteProduct(id: $id) {
-      _id
-    }
-  }
-`;
+const API_URL = "http://localhost:3001/api/v1/products";
 
 function InventoryManagement() {
   const bg = useColorModeValue("white", "gray.800");
   const color = useColorModeValue("gray.700", "gray.200");
+  const isMobile = useBreakpointValue({ base: true, md: false });
 
-  const { loading, error, data } = useQuery(GET_PRODUCTS);
-  const [deleteProduct] = useMutation(DELETE_PRODUCT);
-  const isMobile = useBreakpointValue({ base: true, md: false }); // Determine if mobile or not
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p>Error: {error.message}</p>;
+  useEffect(() => {
+    fetchProducts();
+  }, []);
 
-  //handle product delete using mutation
-  const handleDelete = async (productId) => {
+  const fetchProducts = async () => {
     try {
-      await deleteProduct({
-        variables: { id: productId },
-        refetchQueries: [{ query: GET_PRODUCTS }],
-      });
+      const response = await axios.get(API_URL);
+      setProducts(response.data);
+      setLoading(false);
     } catch (err) {
-      console.error(err);
+      setError(err.message);
+      setLoading(false);
     }
   };
 
-  const fcontstyle = {
-    display: "flex",
-    flexWrap: "wrap",
-    fontSize: "30px"
+  const handleDelete = async (productId) => {
+    try {
+      await axios.delete(`${API_URL}/${productId}`);
+      setProducts(products.filter(product => product._id !== productId));
+    } catch (err) {
+      console.error("Error deleting product:", err);
+    }
   };
 
-  const right = {
-    padding: "25px",
-    flex: "80%"
-  }
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error}</p>;
 
   return (
     <Flex direction="column" minHeight="100vh">
       <Header />
 
-      <Flex as="main" className='main'style={fcontstyle} flex="1" p={4}>
+      <Flex as="main" flex="1" p={4}>
         <Sidebar />
-        <Box style={right}overflowX="auto" bg={bg} borderRadius="md" flex="1" color={color}>
-            <Table variant='simple' m={0} p={0}>
-              <Thead>
-                <Tr>
-                  <Th>Name</Th>
-                  {!isMobile &&
-                    <React.Fragment>
-                      <Th>Description</Th>
-                    </React.Fragment>}
-                  {!isMobile &&
-                    <React.Fragment>
-                      <Th>Image</Th>
-                    </React.Fragment>}
-                  <Th>Quantity</Th>
-                  <Th>Modify Item</Th>
-                  <Th>Delete Item</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {data.products.map(product => (
-                  <Tr key={product._id}>
-                    <Td>{product.name}</Td>
-                    {!isMobile &&
-                      <React.Fragment>
-                        <Td>{product.description}</Td>
-                      </React.Fragment>}
-                      {!isMobile &&
-                    <React.Fragment>
-                    <Td>{product.image}</Td>
-                    </React.Fragment>}
-                    <Td>{product.quantity}</Td>
-                    <Td>
-                      <Link to={`/modifyitem/${product._id}`}>
-                        <Icon as={MdOutlineModeEdit} />
-                      </Link>
-                    </Td>
-                    <Td>
-                      <FaTrash
-                        color='red'
-                        cursor='pointer'
-                        onClick={() => handleDelete(product._id)}
-                      />
-                    </Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
-          <Flex justifyContent='center' mt={4}>
+        <Box flex="1" ml={{ base: 0, md: 4 }} p={5} bg={bg} borderRadius="md" color={color}>
+          <SimpleGrid columns={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing={5}>
+            {products.map(product => (
+              <Box key={product._id} p={4} bg="gray.100" borderRadius="lg" shadow="md">
+                <VStack spacing={3} align="center">
+                  <Image 
+                    src={product.image} 
+                    alt={product.name} 
+                    boxSize="100px" 
+                    objectFit="cover" 
+                    borderRadius="md"
+                  />
+                  <Text fontSize="lg" fontWeight="bold">Food Name :{product.name}</Text>
+                  {!isMobile && <Text fontSize="sm">Food Description :{product.description}</Text>}
+                  <Text fontSize="md" fontWeight="bold">Quantity: {product.quantity}</Text>
+
+                  <HStack spacing={3}>
+                    <Button as={Link} to={`/modifyitem/${product._id}`} leftIcon={<MdOutlineModeEdit />} colorScheme="blue">
+                      Edit
+                    </Button>
+                    <IconButton 
+                      aria-label="Delete item"
+                      icon={<FaTrash />}
+                      colorScheme="red"
+                      onClick={() => handleDelete(product._id)}
+                    />
+                  </HStack>
+                </VStack>
+              </Box>
+            ))}
+          </SimpleGrid>
+
+          <Flex justifyContent='center' mt={6}>
             <Button as={Link} to='/additem' colorScheme='green'>
               Add New Item
             </Button>
@@ -140,9 +105,8 @@ function InventoryManagement() {
       </Flex>
 
       <Footer />
-    </Flex >
+    </Flex>
   );
 }
 
 export default InventoryManagement;
-

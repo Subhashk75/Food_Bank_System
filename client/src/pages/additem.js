@@ -1,38 +1,49 @@
-import React, { useState } from 'react';
-import { useMutation } from '@apollo/client';
-import { gql } from '@apollo/client';
-import { Stack, InputGroup, Input, InputLeftAddon, Button, Flex, Box, useColorModeValue } from '@chakra-ui/react'; // Import useColorModeValue
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Stack, InputGroup, Input, InputLeftAddon, Button, Flex, Box, useColorModeValue } from '@chakra-ui/react';
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
 import Footer from '../components/layout/Footer';
 
-const ADD_PRODUCT = gql`
-  mutation AddProduct($name: String!, $description: String, $image: String, $quantity: Int, $categoryId: ID) {
-    addProduct(name: $name, description: $description, image: $image, quantity: $quantity, categoryId: $categoryId) {
-      _id
-      name
-      description
-      image
-      quantity
-    }
-  }
-`;
+const API_URL = 'http://localhost:3001/api/v1/products';
+const CATEGORY_API_URL = 'http://localhost:3001/api/v1/getCategories';
 
 function AddItem() {
-  const bg = useColorModeValue("gray.100", "gray.800"); // Define background color
-  const color = useColorModeValue("gray.700", "gray.200"); // Define text color
-  const inputLeftAddonStyle = {
-    width: '150px',
-  };
+  const bg = useColorModeValue('gray.100', 'gray.800');
+  const color = useColorModeValue('gray.700', 'gray.200');
 
   const [inputValues, setInputValues] = useState({
     name: '',
     description: '',
     image: '',
     quantity: '',
+    categoryId: '',
   });
 
-  const [addProduct] = useMutation(ADD_PRODUCT);
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setCategoriesLoading(true);
+    axios
+      .get(CATEGORY_API_URL)
+      .then((response) => {
+        const fetchedCategories = response.data;
+        if (fetchedCategories.length === 0) {
+          setError('No categories found in the database.');
+        } else {
+          setCategories(fetchedCategories);
+        }
+        setCategoriesLoading(false);
+      })
+      .catch((err) => {
+        console.error('Error fetching categories:', err);
+        setError('Failed to fetch categories from the server.');
+        setCategoriesLoading(false);
+      });
+  }, []);
 
   const handleInputChange = (fieldName, value) => {
     setInputValues((prevValues) => ({
@@ -42,97 +53,110 @@ function AddItem() {
   };
 
   const handleAddItem = async () => {
-    try {
-      const { data } = await addProduct({
-        variables: {
-          ...inputValues,
-          quantity:0, 
-        },
-      });
+    setLoading(true);
+    setError('');
+    console.log("Adding item...");
 
+    try {
+      const response = await axios.post(API_URL, inputValues);
+      console.log('Product added:', response.data);
+      
+      // Reset form after successful addition
       setInputValues({
         name: '',
         description: '',
         image: '',
-        quantity: '0', 
-        category: '',
+        quantity: '',
+        categoryId: '',
+      });
 
-      }); 
-      console.log('Product added:', data.addProduct);
     } catch (error) {
-      console.error('Error adding product:', error);
+      setError(error.response?.data?.message || 'Error adding product');
+    } finally {
+      setLoading(false);
     }
-
-
-  };
-
-
-  const buttonStyle = {
-    width: '100px',
   };
 
   return (
     <Flex direction="column" minHeight="100vh">
       <Header />
-
       <Flex as="main" flex="1" p={4}>
         <Sidebar />
-        <Box flex="1" ml={4} p={5} bg={bg} borderRadius="md" color={color}> {/* Apply the bg and color */}
+        <Box flex="1" ml={4} p={5} bg={bg} borderRadius="md" color={color}>
           <Stack spacing={4}>
             <InputGroup>
-              <InputLeftAddon style={inputLeftAddonStyle} children='Name' />
+              <InputLeftAddon width="150px">Name</InputLeftAddon>
               <Input
-                placeholder='Item name'
+                placeholder="Item name"
                 value={inputValues.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
               />
             </InputGroup>
 
             <InputGroup>
-              <InputLeftAddon style={inputLeftAddonStyle} children='Description' />
+              <InputLeftAddon width="150px">Description</InputLeftAddon>
               <Input
-                placeholder='Item description'
+                placeholder="Item description"
                 value={inputValues.description}
                 onChange={(e) => handleInputChange('description', e.target.value)}
               />
             </InputGroup>
 
             <InputGroup>
-              <InputLeftAddon style={inputLeftAddonStyle} children='Image' />
+              <InputLeftAddon width="150px">Image</InputLeftAddon>
               <Input
-                placeholder='Image URL'
+                placeholder="Image URL"
                 value={inputValues.image}
                 onChange={(e) => handleInputChange('image', e.target.value)}
               />
             </InputGroup>
 
             <InputGroup>
-              <InputLeftAddon style={inputLeftAddonStyle} children='Quantity' />
+              <InputLeftAddon width="150px">Quantity</InputLeftAddon>
               <Input
-                placeholder='How many'
-                value={0} disabled='true'
+                placeholder="Enter quantity"
+                type="number"
+                value={inputValues.quantity}
                 onChange={(e) => handleInputChange('quantity', e.target.value)}
               />
             </InputGroup>
 
             <InputGroup>
-              <InputLeftAddon style={inputLeftAddonStyle} children='Category' />
-              <Input
-                placeholder='Fruit/Legumes/etc'
-                value={inputValues.category}
-                onChange={(e) => handleInputChange('category', e.target.value)}
-              />
+              <InputLeftAddon width="150px">Category</InputLeftAddon>
+              <select
+                value={inputValues.categoryId}
+                onChange={(e) => handleInputChange('categoryId', e.target.value)}
+                style={{ width: '100%', padding: '8px', borderRadius: '5px' }}
+                disabled={categoriesLoading}
+              >
+                <option value="">Select a category</option>
+                {categories.map((category) => (
+                  <option key={category._id} value={category._id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
             </InputGroup>
 
             <Flex justifyContent="center">
-              <Button size="sm" colorScheme="green" style={buttonStyle} onClick={handleAddItem}>
+              <Button
+                size="sm"
+                colorScheme="green"
+                width="100px"
+                onClick={handleAddItem}
+                isLoading={loading}
+                isDisabled={!inputValues.name || !inputValues.categoryId || !inputValues.quantity || loading}
+              >
                 Add Item
               </Button>
             </Flex>
+
+            {categoriesLoading && <p>Loading categories...</p>}
+            {!categoriesLoading && categories.length === 0 && <p>No categories available.</p>}
+            {error && <p style={{ color: 'red' }}>Error: {error}</p>}
           </Stack>
         </Box>
       </Flex>
-
       <Footer />
     </Flex>
   );
