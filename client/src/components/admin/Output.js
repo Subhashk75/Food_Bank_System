@@ -1,78 +1,129 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Input, Button, Flex, Box, List, ListItem, useColorModeValue } from '@chakra-ui/react';
+import { 
+  Input, 
+  Button, 
+  Flex, 
+  Box, 
+  List, 
+  ListItem, 
+  useColorModeValue,
+  useToast,
+  Text
+} from '@chakra-ui/react';
 import Header from '../layout/Header';
 import Sidebar from '../layout/Sidebar';
 import Footer from '../layout/Footer';
-
-const API_URL = "http://localhost:3001/api/v1/products"; // Updated base URL
+import { productService } from '../utils/api';
+import Auth from '../utils/auth';
+import { useNavigate } from 'react-router-dom';
 
 function RegisterProductOutput() {
   const bg = useColorModeValue("white", "gray.800");
-  const color = useColorModeValue("gray.700", "gray.200");
-
   const [productName, setProductName] = useState('');
+  const [productId, setProductId] = useState('');
   const [outputQuantity, setOutputQuantity] = useState('');
   const [suggestions, setSuggestions] = useState([]);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const toast = useToast();
 
   useEffect(() => {
+    if (!Auth.loggedIn()) {
+      navigate("/");
+    }
+
     const fetchProducts = async () => {
       try {
-        const response = await axios.get(API_URL); // Adjusted endpoint
-        console.log("respone get in output file and inside fetchProducts ")
+        const response = await productService.getAll();
         setSuggestions(response.data);
-      } catch (err) {
-        console.log(" errorr  respone get in output file and inside fetchProducts ")
-
-        setErrorMessage('Failed to fetch products');
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch products',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
       }
     };
 
     fetchProducts();
-  }, []);
+  }, [navigate, toast]);
 
-  const handleProductNameChange = (e) => {
+  const handleProductNameChange = async (e) => {
     const value = e.target.value;
     setProductName(value);
 
-    if (value) {
-      const filteredProducts = suggestions.filter((product) =>
-        product.name.toLowerCase().startsWith(value.toLowerCase())
-      );
-      setSuggestions(filteredProducts);
-    } else {
+    if (value.length < 2) {
       setSuggestions([]);
-    }
-  };
-
-  const handleSuggestionClick = (suggestion) => {
-    setProductName(suggestion.name);
-    setSuggestions([]);
-  };
-
-  const handleSubtractQuantity = async () => {
-    if (!productName || !outputQuantity) {
-      setErrorMessage('Please enter product name and quantity.');
       return;
     }
 
     try {
-      await axios.post(`${API_URL}/subtractQuantity`, { // Updated endpoint
-        name: productName,
-        quantity: parseInt(outputQuantity),
+      const response = await productService.search(value);
+      setSuggestions(response.data);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to search products',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
       });
-      console.log("respone get in output file and inside handleSubtractQuantity ")
+      setSuggestions([]);
+    }
+  };
 
-      setSuccessMessage('Quantity updated successfully!');
+  const handleSuggestionClick = (product) => {
+    setProductName(product.name);
+    setProductId(product._id);
+    setSuggestions([]);
+  };
+
+  const handleSubtractQuantity = async () => {
+    if (!productName || !outputQuantity || !productId) {
+      toast({
+        title: 'Error',
+        description: 'Please select a product and enter quantity',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const response = await productService.updateQuantity(
+        productId,
+        {
+          quantity: parseInt(outputQuantity),
+          operation: 'subtract'
+        }
+      );
+
+      toast({
+        title: 'Success',
+        description: 'Product quantity updated successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+
       setProductName('');
+      setProductId('');
       setOutputQuantity('');
     } catch (error) {
-      console.log(" error respone get in output file and inside handleSubtractQuantity ")
- 
-      setErrorMessage('Error updating product quantity.');
-      console.error(error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update product quantity',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -81,33 +132,65 @@ function RegisterProductOutput() {
       <Header />
       <Flex as="main" flex="1" p={4}>
         <Sidebar />
-        <Box bg={bg} borderRadius="md" flex="1" p={5} color={color}>
+        <Box 
+          bg={bg} 
+          borderRadius="md" 
+          flex="1" 
+          p={5}
+          boxShadow="md"
+        >
+          <Text fontSize="xl" fontWeight="bold" mb={4}>Register Product Output</Text>
+          
           <Input
             placeholder="Type product name"
             value={productName}
             onChange={handleProductNameChange}
+            mb={2}
           />
-          {suggestions.length > 0 && (
-            <List>
-              {suggestions.map((suggestion) => (
-                <ListItem key={suggestion._id} onClick={() => handleSuggestionClick(suggestion)}>
-                  {suggestion.name}
-                </ListItem>
-              ))}
-            </List>
+
+          {suggestions.length > 0 && productName && (
+            <Box 
+              border="1px" 
+              borderColor="gray.200" 
+              borderRadius="md" 
+              maxH="200px" 
+              overflowY="auto"
+              mb={2}
+            >
+              <List>
+                {suggestions.map((product) => (
+                  <ListItem 
+                    key={product._id} 
+                    p={2} 
+                    _hover={{ bg: 'gray.100' }}
+                    onClick={() => handleSuggestionClick(product)}
+                    cursor="pointer"
+                  >
+                    {product.name} (Current: {product.quantity})
+                  </ListItem>
+                ))}
+              </List>
+            </Box>
           )}
+
           <Input
             placeholder="Enter output quantity"
             value={outputQuantity}
             onChange={(e) => setOutputQuantity(e.target.value)}
             type="number"
-            mt={2}
+            min="1"
+            mb={2}
           />
-          <Button onClick={handleSubtractQuantity} mt={2}>
-            Subtract Quantity
+
+          <Button 
+            onClick={handleSubtractQuantity} 
+            colorScheme="red"
+            isLoading={isLoading}
+            loadingText="Processing..."
+            width="full"
+          >
+            Record Output
           </Button>
-          {errorMessage && <p style={{ color: "red" }}>{errorMessage}</p>}
-          {successMessage && <p style={{ color: "green" }}>{successMessage}</p>}
         </Box>
       </Flex>
       <Footer />

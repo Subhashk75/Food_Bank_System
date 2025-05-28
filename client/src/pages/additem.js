@@ -1,16 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Stack, InputGroup, Input, InputLeftAddon, Button, Flex, Box, useColorModeValue } from '@chakra-ui/react';
+import { 
+  Stack, 
+  InputGroup, 
+  Input, 
+  InputLeftAddon, 
+  Button, 
+  Flex, 
+  Box, 
+  useColorModeValue,
+  useToast,
+  Select,
+  Text,
+  Spinner,
+  Center
+} from '@chakra-ui/react';
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
 import Footer from '../components/layout/Footer';
-
-const API_URL = 'http://localhost:3001/api/v1/products';
-const CATEGORY_API_URL = 'http://localhost:3001/api/v1/getCategories';
+import { productService, categoryService } from '../components/utils/api';
+import Auth from '../components/utils/auth';
+import { useNavigate } from 'react-router-dom';
 
 function AddItem() {
   const bg = useColorModeValue('gray.100', 'gray.800');
   const color = useColorModeValue('gray.700', 'gray.200');
+  const toast = useToast();
+  const navigate = useNavigate();
 
   const [inputValues, setInputValues] = useState({
     name: '',
@@ -23,27 +38,31 @@ function AddItem() {
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    setCategoriesLoading(true);
-    axios
-      .get(CATEGORY_API_URL)
-      .then((response) => {
-        const fetchedCategories = response.data;
-        if (fetchedCategories.length === 0) {
-          setError('No categories found in the database.');
-        } else {
-          setCategories(fetchedCategories);
-        }
+    if (!Auth.loggedIn()) {
+      navigate("/");
+    }
+
+    const fetchCategories = async () => {
+      try {
+        const response = await categoryService.getAll();
+        setCategories(response.data);
         setCategoriesLoading(false);
-      })
-      .catch((err) => {
-        console.error('Error fetching categories:', err);
-        setError('Failed to fetch categories from the server.');
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch categories',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
         setCategoriesLoading(false);
-      });
-  }, []);
+      }
+    };
+
+    fetchCategories();
+  }, [navigate, toast]);
 
   const handleInputChange = (fieldName, value) => {
     setInputValues((prevValues) => ({
@@ -54,13 +73,24 @@ function AddItem() {
 
   const handleAddItem = async () => {
     setLoading(true);
-    setError('');
-    console.log("Adding item...");
 
     try {
-      const response = await axios.post(API_URL, inputValues);
-      console.log('Product added:', response.data);
+      const productData = {
+        ...inputValues,
+        quantity: parseInt(inputValues.quantity),
+        category: inputValues.categoryId
+      };
+
+      const response = await productService.create(productData);
       
+      toast({
+        title: 'Success',
+        description: 'Product added successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+
       // Reset form after successful addition
       setInputValues({
         name: '',
@@ -70,11 +100,31 @@ function AddItem() {
         categoryId: '',
       });
 
+      // Redirect to inventory after 1 second
+      setTimeout(() => {
+        navigate('/inventory');
+      }, 1000);
+
     } catch (error) {
-      setError(error.response?.data?.message || 'Error adding product');
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to add product',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
     } finally {
       setLoading(false);
     }
+  };
+
+  const isFormValid = () => {
+    return (
+      inputValues.name && 
+      inputValues.categoryId && 
+      inputValues.quantity && 
+      !isNaN(inputValues.quantity)
+    );
   };
 
   return (
@@ -82,7 +132,15 @@ function AddItem() {
       <Header />
       <Flex as="main" flex="1" p={4}>
         <Sidebar />
-        <Box flex="1" ml={4} p={5} bg={bg} borderRadius="md" color={color}>
+        <Box 
+          flex="1" 
+          ml={{ base: 0, md: 4 }} 
+          p={5} 
+          bg={bg} 
+          borderRadius="md" 
+          color={color}
+          boxShadow="sm"
+        >
           <Stack spacing={4}>
             <InputGroup>
               <InputLeftAddon width="150px">Name</InputLeftAddon>
@@ -90,6 +148,7 @@ function AddItem() {
                 placeholder="Item name"
                 value={inputValues.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
+                isRequired
               />
             </InputGroup>
 
@@ -103,7 +162,7 @@ function AddItem() {
             </InputGroup>
 
             <InputGroup>
-              <InputLeftAddon width="150px">Image</InputLeftAddon>
+              <InputLeftAddon width="150px">Image URL</InputLeftAddon>
               <Input
                 placeholder="Image URL"
                 value={inputValues.image}
@@ -116,44 +175,52 @@ function AddItem() {
               <Input
                 placeholder="Enter quantity"
                 type="number"
+                min="0"
                 value={inputValues.quantity}
                 onChange={(e) => handleInputChange('quantity', e.target.value)}
+                isRequired
               />
             </InputGroup>
 
             <InputGroup>
               <InputLeftAddon width="150px">Category</InputLeftAddon>
-              <select
-                value={inputValues.categoryId}
-                onChange={(e) => handleInputChange('categoryId', e.target.value)}
-                style={{ width: '100%', padding: '8px', borderRadius: '5px' }}
-                disabled={categoriesLoading}
-              >
-                <option value="">Select a category</option>
-                {categories.map((category) => (
-                  <option key={category._id} value={category._id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
+              {categoriesLoading ? (
+                <Center flex="1">
+                  <Spinner size="sm" />
+                </Center>
+              ) : (
+                <Select
+                  placeholder="Select a category"
+                  value={inputValues.categoryId}
+                  onChange={(e) => handleInputChange('categoryId', e.target.value)}
+                  isRequired
+                >
+                  {categories.map((category) => (
+                    <option key={category._id} value={category._id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </InputGroup>
 
-            <Flex justifyContent="center">
+            <Flex justifyContent="center" mt={4}>
               <Button
-                size="sm"
                 colorScheme="green"
-                width="100px"
+                width="150px"
                 onClick={handleAddItem}
                 isLoading={loading}
-                isDisabled={!inputValues.name || !inputValues.categoryId || !inputValues.quantity || loading}
+                isDisabled={!isFormValid() || loading}
               >
                 Add Item
               </Button>
             </Flex>
 
-            {categoriesLoading && <p>Loading categories...</p>}
-            {!categoriesLoading && categories.length === 0 && <p>No categories available.</p>}
-            {error && <p style={{ color: 'red' }}>Error: {error}</p>}
+            {!categoriesLoading && categories.length === 0 && (
+              <Text color="orange.500" textAlign="center">
+                No categories available. Please create categories first.
+              </Text>
+            )}
           </Stack>
         </Box>
       </Flex>

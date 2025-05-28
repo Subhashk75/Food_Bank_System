@@ -1,36 +1,69 @@
-import React, { useState } from 'react';
-import { useMutation } from '@apollo/client'; 
-import { Stack, InputGroup, Input, InputLeftAddon, Button, Flex } from '@chakra-ui/react';
+import React, { useState, useEffect } from 'react';
+import { 
+  Stack, 
+  InputGroup, 
+  Input, 
+  InputLeftAddon, 
+  Button, 
+  Flex,
+  useToast,
+  Spinner,
+  Text
+} from '@chakra-ui/react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useQuery } from '@apollo/client';
-import { GET_PRODUCT } from '../components/utils/queries';
-import { updateProduct } from '../components/utils/mutations'; 
-
+import { productService } from '../components/utils/api';
+import Auth from '../components/utils/auth';
 
 function Modify() {
-
-  const location= useLocation()
-  const navigate = useNavigate(); 
-  const productId = location.state.productId;
-  const [updateProductMutation] = useMutation(updateProduct); 
-
-  const {loading, data} = useQuery(GET_PRODUCT, {
-    variables: {
-      productId: productId,
-    },
-  }); 
-
-  const product = data?.product || {};
-
-  const inputLeftAddonStyle = {
-    width: '150px', // Adjust the width as needed
-  };
-
+  const location = useLocation();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const productId = location.state?.productId;
+  
   const [inputValues, setInputValues] = useState({
-    name: product.name || '',
-    description: product.description || '',
-    quantity: product.quantity || '',
+    name: '',
+    description: '',
+    quantity: '',
   });
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
+
+  useEffect(() => {
+    if (!Auth.loggedIn()) {
+      navigate("/login");
+      return;
+    }
+
+    if (!productId) {
+      navigate("/productlist");
+      return;
+    }
+
+    const fetchProduct = async () => {
+      try {
+        const response = await productService.getById(productId);
+        const product = response.data;
+        setInputValues({
+          name: product.name,
+          description: product.description,
+          quantity: product.quantity.toString(),
+        });
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch product details',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        navigate("/productlist");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProduct();
+  }, [productId, navigate, toast]);
 
   const handleInputChange = (fieldName, value) => {
     setInputValues((prevValues) => ({
@@ -40,62 +73,99 @@ function Modify() {
   };
 
   const handleModifyItem = async () => {
-    try {
-      const { data } = await updateProductMutation({
-        variables: {
-          productId: productId,
-          description: inputValues.description,
-          name: inputValues.name,
-          quantity: parseInt(inputValues.quantity),
-        },
-      }); 
-      
-      console.log('Input values:', inputValues);
-
-      window.location.replace('/productlist'); 
-    } catch (error) {
-      console.error('Mutation error:', error); 
+    if (!inputValues.name || !inputValues.quantity) {
+      toast({
+        title: 'Error',
+        description: 'Name and quantity are required',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+      return;
     }
 
+    setUpdating(true);
+    try {
+      const productData = {
+        name: inputValues.name,
+        description: inputValues.description,
+        quantity: parseInt(inputValues.quantity),
+      };
+
+      await productService.update(productId, productData);
+      
+      toast({
+        title: 'Success',
+        description: 'Product updated successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+      
+      navigate("/productlist");
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update product',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setUpdating(false);
+    }
   };
 
-  const buttonStyle = {
-    width: '100px', // Adjust the width as needed
-  };
+  if (loading) {
+    return (
+      <Flex justify="center" align="center" height="200px">
+        <Spinner size="xl" />
+      </Flex>
+    );
+  }
 
   return (
-    <Stack spacing={4}>
+    <Stack spacing={4} p={4}>
       <InputGroup>
-        <InputLeftAddon style={inputLeftAddonStyle} children='Name' />
+        <InputLeftAddon width="150px">Name</InputLeftAddon>
         <Input
-          placeholder={product.name}
+          placeholder="Product name"
           value={inputValues.name}
           onChange={(e) => handleInputChange('name', e.target.value)}
+          isRequired
         />
       </InputGroup>
+      
       <InputGroup>
-        <InputLeftAddon style={inputLeftAddonStyle} children='Description' />
+        <InputLeftAddon width="150px">Description</InputLeftAddon>
         <Input
-          placeholder={product.description}
+          placeholder="Product description"
           value={inputValues.description}
           onChange={(e) => handleInputChange('description', e.target.value)}
         />
       </InputGroup>
+      
       <InputGroup>
-        <InputLeftAddon style={inputLeftAddonStyle} children='Quantity' />
+        <InputLeftAddon width="150px">Quantity</InputLeftAddon>
         <Input
-          placeholder={product.quantity}
+          type="number"
+          min="0"
+          placeholder="Quantity"
           value={inputValues.quantity}
           onChange={(e) => handleInputChange('quantity', e.target.value)}
+          isRequired
         />
       </InputGroup>
-      {/* Other input fields */}
-      <Flex justifyContent='center'>
-        <Button size='sm'
-         colorScheme='green' 
-         style={buttonStyle} 
-         onClick={handleModifyItem}>
-          Modify Item
+      
+      <Flex justifyContent="center" mt={4}>
+        <Button
+          colorScheme="green"
+          width="150px"
+          onClick={handleModifyItem}
+          isLoading={updating}
+          loadingText="Updating..."
+        >
+          Update Product
         </Button>
       </Flex>
     </Stack>

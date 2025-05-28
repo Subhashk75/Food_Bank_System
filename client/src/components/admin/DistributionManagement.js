@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Box, Flex, Input, Button, Text, List, ListItem, useColorModeValue } from '@chakra-ui/react';
+import { Box, Flex, Input, Button, Text, List, ListItem, useColorModeValue, useToast } from '@chakra-ui/react';
 import Header from '../layout/Header';
 import Sidebar from '../layout/Sidebar';
 import Footer from '../layout/Footer';
 import { useNavigate } from "react-router-dom";
-
-const API_URL = "http://localhost:3001/api/v1"; // Adjust based on your backend
+import { productService, distributionService } from '../utils/api';
+import Auth from '../utils/auth';
 
 function Distribution() {
   const [products, setProducts] = useState([]);
@@ -17,41 +16,46 @@ function Distribution() {
   const [purpose, setPurpose] = useState('');
   const [batch, setBatch] = useState('');
   const [suggestions, setSuggestions] = useState([]);
-  const [isButtonDisabled, setIsButtonDisabled] = useState(false);
-  const [doneMessage, setDoneMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-
+  const [isLoading, setIsLoading] = useState(false);
   const bg = useColorModeValue("white", "gray.800");
-  const color = useColorModeValue("gray.700", "gray.200");
   const navigate = useNavigate();
+  const toast = useToast();
+
+  useEffect(() => {
+    if (!Auth.loggedIn()) {
+      navigate("/");
+    }
+  }, [navigate]);
 
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await axios.get(`${API_URL}/products`); // Updated to /products
-        console.log("respone get in Distributionmangement file and inside fectch Prodout ")
-
-        setSuggestions(response.data);
+        const response = await productService.getAll();
+        setSuggestions(response.data || []);
       } catch (err) {
-        console.log(" error get respone get in Distributionmangement file and inside fectch Prodout ")
-
-        setErrorMessage("Failed to fetch products.");
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch products',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
       }
     };
     fetchProducts();
-  }, []);
+  }, [toast, navigate]);
 
   const handleProductNameChange = (e) => {
     const value = e.target.value;
     setProductName(value);
 
     if (value) {
-      const filteredProducts = suggestions.filter((product) =>
-        product.name.toLowerCase().includes(value.toLowerCase())
+      const filtered = suggestions.filter((p) =>
+        p.name.toLowerCase().includes(value.toLowerCase())
       );
-      setSuggestions(filteredProducts);
+      setSuggestions(filtered);
     } else {
-      setSuggestions([]); // Reset suggestions when input is cleared
+      setSuggestions([]);
     }
   };
 
@@ -63,104 +67,197 @@ function Distribution() {
 
   const handleAddProduct = () => {
     if (!productName || !productQuantity || !productId) {
-      setErrorMessage('Please fill out all fields before adding.');
+      toast({
+        title: 'Error',
+        description: 'Please fill out all fields before adding.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
       return;
     }
 
-    setProducts([...products, { name: productName, quantity: parseInt(productQuantity), _id: productId }]);
+    setProducts([...products, {
+      name: productName,
+      quantity: parseInt(productQuantity),
+      _id: productId
+    }]);
+
     setProductName('');
     setProductQuantity('');
     setProductId('');
-    setErrorMessage('');
   };
 
-  const handleDistribute = async () => {
-    if (products.length === 0 || !unit || !purpose || !batch) {
-      setErrorMessage('Complete all fields before submitting.');
-      return;
-    }
+  const handleRemoveProduct = (index) => {
+    const newProducts = [...products];
+    newProducts.splice(index, 1);
+    setProducts(newProducts);
+  };
 
-    setIsButtonDisabled(true);
-    setErrorMessage('');
+const handleDistribute = async () => {
+  if (products.length === 0 || !unit || !purpose || !batch) {
+    toast({
+      title: 'Error',
+      description: 'Complete all fields before submitting.',
+      status: 'error',
+      duration: 3000,
+      isClosable: true,
+    });
+    return;
+  }
 
-    const transaction = {
-      operation: "Distribute", // Added operation for distribution
-      products,
+  setIsLoading(true);
+
+  try {
+    const distributionPayload = products.map((product) => ({
+      product: product._id,
+      quantity: Number(product.quantity),
+      unit: Number(unit), // Ensure unit is a number
+      operation: "Distribute", // Add this required field
       purpose,
-      unit: parseInt(unit),
-      batchSize: batch
-    };
+      batch,
+    }));
 
-    try {
-      await axios.post(`${API_URL}/distribution`, transaction);
-      console.log("respone get in Distributionmangement file and inside handleDistribute  ")
-
-      setDoneMessage('Transaction submitted successfully!');
-      setTimeout(() => {
-        setProducts([]);
-        setUnit('');
-        setPurpose('');
-        setBatch('');
-        setIsButtonDisabled(false);
-        navigate('/dashboard');
-      }, 3000);
-    } catch (err) {
-      setErrorMessage('Error submitting transaction.');
-      setIsButtonDisabled(false);
+    // Validate payload before sending
+    for (const item of distributionPayload) {
+      if (!item.product || isNaN(item.quantity) || isNaN(item.unit) || !item.purpose || !item.batch) {
+        throw new Error('Invalid distribution data');
+      }
     }
-  };
+
+    await distributionService.create(distributionPayload);
+
+    toast({
+      title: 'Success',
+      description: 'Distribution recorded successfully!',
+      status: 'success',
+      duration: 3000,
+      isClosable: true,
+    });
+
+    // Reset form
+    setProducts([]);
+    setUnit('');
+    setPurpose('');
+    setBatch('');
+    navigate('/dashboard');
+  } catch (err) {
+    toast({
+      title: 'Error',
+      description: err.message || 'Error submitting distribution.',
+      status: 'error',
+      duration: 5000,
+      isClosable: true,
+    });
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   return (
     <Flex direction="column" minHeight="100vh">
       <Header />
       <Flex as="main" flex="1" p={4}>
         <Sidebar />
-        <Flex flex="1" p={5} bg="gray.100" borderRadius="md">
-          <Box flex="1" bg={bg} borderRadius="md" marginEnd='5px'>
-            <Text mb={4}>Add Products:</Text>
+        <Flex flex="1" p={5} bg="gray.100" borderRadius="md" gap={4}>
+          <Box flex="1" bg={bg} borderRadius="md" p={4}>
+            <Text fontSize="lg" mb={4}>Add Products</Text>
             <Input
               placeholder="Type product name"
               value={productName}
               onChange={handleProductNameChange}
+              mb={2}
             />
             {suggestions.length > 0 && (
-              <List>
-                {suggestions.map((suggestion) => (
-                  <ListItem key={suggestion._id} onClick={() => handleSuggestionClick(suggestion)}>
-                    {suggestion.name}
-                  </ListItem>
-                ))}
-              </List>
+              <Box border="1px" borderColor="gray.200" borderRadius="md" maxH="200px" overflowY="auto" mb={2}>
+                <List>
+                  {suggestions.map((s) => (
+                    <ListItem 
+                      key={s._id} 
+                      p={2} 
+                      _hover={{ bg: 'gray.100' }}
+                      onClick={() => handleSuggestionClick(s)}
+                      cursor="pointer"
+                    >
+                      {s.name}
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
             )}
             <Input
               placeholder="Enter product quantity"
               value={productQuantity}
               onChange={(e) => setProductQuantity(e.target.value)}
               type="number"
-              mt={2}
+              min="1"
+              mb={2}
             />
-            <Button onClick={handleAddProduct} mt={2}>
+            <Button onClick={handleAddProduct} colorScheme="blue" width="full">
               Add Product
             </Button>
-            <List spacing={3} mt={3}>
-              {products.map((product, index) => (
-                <ListItem key={index}>
-                  {product.name} - Quantity: {product.quantity}
-                </ListItem>
-              ))}
-            </List>
+            
+            {products.length > 0 && (
+              <Box mt={4}>
+                <Text fontWeight="bold" mb={2}>Products to Distribute:</Text>
+                <List spacing={2}>
+                  {products.map((product, index) => (
+                    <ListItem 
+                      key={index} 
+                      p={2} 
+                      bg="gray.50" 
+                      borderRadius="md"
+                      display="flex"
+                      justifyContent="space-between"
+                      alignItems="center"
+                    >
+                      <Text>{product.name} - Quantity: {product.quantity}</Text>
+                      <Button 
+                        size="sm" 
+                        colorScheme="red"
+                        onClick={() => handleRemoveProduct(index)}
+                      >
+                        Remove
+                      </Button>
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
           </Box>
 
-          <Box flex="1" bg={bg} borderRadius="md">
-            <Text mb={4}>Transaction Info:</Text>
-            <Input placeholder="Enter number of units" value={unit} onChange={(e) => setUnit(e.target.value)} type="number" />
-            <Input placeholder="Purpose" value={purpose} onChange={(e) => setPurpose(e.target.value)} type="text" mt={2} />
-            <Input placeholder="Batch Size" value={batch} onChange={(e) => setBatch(e.target.value)} type="text" mt={2} />
-            <Button onClick={handleDistribute} mt={2} disabled={isButtonDisabled}>
-              Distribute
+          <Box flex="1" bg={bg} borderRadius="md" p={4}>
+            <Text fontSize="lg" mb={4}>Distribution Details</Text>
+            <Input 
+              placeholder="Number of units per item" 
+              value={unit} 
+              onChange={(e) => setUnit(e.target.value)} 
+              type="number" 
+              min="1"
+              mb={3}
+            />
+            <Input 
+              placeholder="Purpose of distribution" 
+              value={purpose} 
+              onChange={(e) => setPurpose(e.target.value)} 
+              mb={3}
+            />
+            <Input 
+              placeholder="Batch identifier" 
+              value={batch} 
+              onChange={(e) => setBatch(e.target.value)} 
+              mb={4}
+            />
+            <Button 
+              onClick={handleDistribute} 
+              colorScheme="green"
+              width="full"
+              isLoading={isLoading}
+              loadingText="Processing..."
+            >
+              Record Distribution
             </Button>
-            {errorMessage && <Text color="red.500">{errorMessage}</Text>}
-            {doneMessage && <Text color="green.500">{doneMessage}</Text>}
           </Box>
         </Flex>
       </Flex>

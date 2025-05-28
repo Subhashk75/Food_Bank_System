@@ -1,42 +1,56 @@
 'use client'
-
-import { Button, Checkbox, Flex, Text, FormControl, FormLabel, Heading, Input, Stack, Image, Box, Link } from '@chakra-ui/react';
+import { Button, Flex, Text, FormControl, FormLabel, Heading, Input, Stack, Image, Box, Link, useToast } from '@chakra-ui/react';
 import { Link as ReactRouterLink, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
-import { useMutation } from '@apollo/client';
-import { UserLogin } from '../utils/mutations';
-import Auth from '../utils/auth';
+import { useState, useEffect } from 'react';
+import { authService } from '../../components/utils/api';
+import Auth from '../../components/utils/auth';
 
-const Login = (props) => {
-  const [userState, setuserState] = useState({ email: '', password: '' });
-  const [login, { error, data }] = useMutation(UserLogin);
+const Login = () => {
+  const [formState, setFormState] = useState({ email: '', password: '' });
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const toast = useToast();
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    switch (name) {
-      case "email":
-        setuserState({ ...userState, [name]: value });
-        break;
-      case "password":
-        setuserState({ ...userState, [name]: value });
-        break;
-      default:
-        break;
+  useEffect(() => {
+    if (Auth.loggedIn()) {
+      navigate('/dashboard');
     }
+  }, [navigate]);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormState(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFormSubmit = async (event) => {
-    event.preventDefault();
-    console.log(userState);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    
     try {
-      const { data } = await login({
-        variables: { ...userState },
+      const response = await authService.login(formState);
+      
+      if (response.success) {
+        Auth.login(response.token);
+        toast({
+          title: 'Login successful',
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
+        navigate('/dashboard');
+      } else {
+        throw new Error(response.message || 'Login failed');
+      }
+    } catch (error) {
+      toast({
+        title: 'Login failed',
+        description: error.message,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
       });
-      Auth.login(data.login.token);
-      navigate('/dashboard');
-    } catch (e) {
-      console.log(e);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -46,56 +60,61 @@ const Login = (props) => {
         <Stack spacing={4} w={'full'} maxW={'md'}>
           <Image src='../../images/logo.png' alt="logo" />
           <Heading fontSize={'2xl'}>Sign in to your account</Heading>
-          <form onSubmit={handleFormSubmit}>
-            <FormControl id="email">
+          
+          <form onSubmit={handleSubmit}>
+            <FormControl id="email" isRequired>
               <FormLabel>Email address</FormLabel>
-              <Input type="email"
+              <Input 
+                type="email"
                 name="email"
-                value={userState.email}
-                onChange={handleChange} />
+                value={formState.email}
+                onChange={handleChange}
+              />
             </FormControl>
-            <FormControl id="password">
+            
+            <FormControl id="password" isRequired>
               <FormLabel>Password</FormLabel>
-              <Input type="password"
+              <Input 
+                type="password"
                 name="password"
-                value={userState.password}
-                onChange={handleChange} />
+                value={formState.password}
+                onChange={handleChange}
+              />
             </FormControl>
-            <Stack spacing={6}>
-              <Stack
-                direction={{ base: 'column', sm: 'row' }}
-                align={'start'}
-                justify={'space-between'}>
-                {/* <Checkbox>Remember me</Checkbox>
-                <Text color={'blue.500'}>Forgot password?</Text> */}
-              </Stack>
-              <Button colorScheme={'blue'} variant={'solid'} type="submit">
+            
+            <Stack spacing={6} mt={4}>
+              <Button 
+                colorScheme={'blue'} 
+                variant={'solid'} 
+                type="submit"
+                isLoading={isLoading}
+                loadingText="Signing in..."
+              >
                 Sign in
               </Button>
             </Stack>
           </form>
-          {error && (
-            <div className="my-3 p-3 bg-danger error-text">
-              {'Incorrect Credentials'}
-            </div>
-          )}
-          <Box>
+          
+          <Box textAlign="center">
             New to us?{" "}
-            <Link color="blue.500" href="#" as={ReactRouterLink} to='/register'>
+            <Link color="blue.500" as={ReactRouterLink} to='/register'>
               Sign Up
             </Link>
           </Box>
         </Stack>
       </Flex>
-      <Flex flex={1}>
+      
+      <Flex flex={1} display={{ base: 'none', md: 'flex' }}>
         <Image
           src={'../../images/food.jpg'}
           alt={'Login Image'}
           objectFit={'cover'}
+          w="full"
+          h="full"
         />
       </Flex>
     </Stack>
-  )
+  );
 };
 
 export default Login;

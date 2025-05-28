@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
 import {
   Table,
   Thead,
@@ -12,98 +11,173 @@ import {
   Flex,
   Box,
   useColorModeValue,
+  useToast,
+  Spinner,
+  Center,
+  IconButton
 } from '@chakra-ui/react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { FaTrash } from 'react-icons/fa';
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
 import Footer from '../components/layout/Footer';
-
-const API_URL = 'http://localhost:3001/api/v1/products';
+import { productService } from '../components/utils/api';
+import Auth from '../components/utils/auth';
 
 const ProductList = () => {
   const bg = useColorModeValue('white', 'gray.800');
   const color = useColorModeValue('gray.700', 'gray.200');
+  const toast = useToast();
+  const navigate = useNavigate();
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   // Fetch products from the backend
   useEffect(() => {
+    if (!Auth.loggedIn()) {
+      navigate("/login");
+      return;
+    }
+
     const fetchProducts = async () => {
       try {
-        const response = await axios.get(API_URL);
-        console.log("productlist file inside festchProdouct")
+        const response = await productService.getAll();
         setProducts(response.data);
-      } catch (err) {
-        console.log("error  productlist file inside festchProdouct")
-
-        setError('Failed to fetch products');
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch products',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
       } finally {
         setLoading(false);
       }
     };
 
     fetchProducts();
-  }, []);
+  }, [navigate, toast]);
 
   // Handle delete request
   const handleDelete = async (productId) => {
     try {
-      await axios.delete(`${API_URL}/${productId}`);
-      console.log("productlist file inside handledlete")
-
+      setDeletingId(productId);
+      await productService.delete(productId);
+      
       setProducts(products.filter((product) => product._id !== productId));
-    } catch (err) {
-      console.log(" error productlist file inside handledelete")
-
-      console.error('Error deleting product:', err);
+      toast({
+        title: 'Success',
+        description: 'Product deleted successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete product',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p style={{ color: 'red' }}>{error}</p>;
+  if (loading) {
+    return (
+      <Flex direction="column" minHeight="100vh">
+        <Header />
+        <Flex as="main" flex="1" p={4}>
+          <Sidebar />
+          <Center flex="1">
+            <Spinner size="xl" />
+          </Center>
+        </Flex>
+        <Footer />
+      </Flex>
+    );
+  }
 
   return (
     <Flex direction="column" minHeight="100vh">
       <Header />
       <Flex as="main" flex="1" p={4}>
         <Sidebar />
-        <Box flex="1" ml={4} p={5} bg={bg} borderRadius="md">
+        <Box 
+          flex="1" 
+          ml={{ base: 0, md: 4 }} 
+          p={5} 
+          bg={bg} 
+          borderRadius="md"
+          boxShadow="sm"
+          overflowX="auto"
+        >
           <TableContainer>
-            <Table variant="simple">
+            <Table variant="striped" colorScheme="gray">
               <Thead>
                 <Tr>
                   <Th>Name</Th>
                   <Th>Quantity</Th>
                   <Th>Description</Th>
-                  <Th>Modify Item</Th>
-                  <Th>Delete Item</Th>
+                  <Th>Category</Th>
+                  <Th>Actions</Th>
                 </Tr>
               </Thead>
               <Tbody>
-                {products.map((product) => (
-                  <Tr key={product._id}>
-                    <Td>{product.name}</Td>
-                    <Td>{product.quantity}</Td>
-                    <Td>{product.description}</Td>
-                    <Td>
-                      <Link to={`/modifyitem/${product._id}`} state={{ productId: product._id }}>
-                        Modify
-                      </Link>
-                    </Td>
-                    <Td>
-                      <FaTrash color="red" cursor="pointer" onClick={() => handleDelete(product._id)} />
+                {products.length > 0 ? (
+                  products.map((product) => (
+                    <Tr key={product._id}>
+                      <Td>{product.name}</Td>
+                      <Td>{product.quantity}</Td>
+                      <Td>{product.description || '-'}</Td>
+                      <Td>{product.category?.name || '-'}</Td>
+                      <Td>
+                        <Flex gap={2}>
+                          <Button
+                            as={Link}
+                            to={`/modifyitem/${product._id}`}
+                            state={{ productId: product._id }}
+                            size="sm"
+                            colorScheme="blue"
+                          >
+                            Edit
+                          </Button>
+                          <IconButton
+                            aria-label="Delete product"
+                            icon={<FaTrash />}
+                            colorScheme="red"
+                            size="sm"
+                            onClick={() => handleDelete(product._id)}
+                            isLoading={deletingId === product._id}
+                          />
+                        </Flex>
+                      </Td>
+                    </Tr>
+                  ))
+                ) : (
+                  <Tr>
+                    <Td colSpan={5} textAlign="center">
+                      No products found
                     </Td>
                   </Tr>
-                ))}
+                )}
               </Tbody>
             </Table>
           </TableContainer>
-          <Flex justifyContent="center" mt={4}>
-            <Button as={Link} to="/additem" colorScheme="green">
-              Add New Item
+
+          <Flex justifyContent="center" mt={6}>
+            <Button 
+              as={Link} 
+              to="/additem" 
+              colorScheme="green"
+              size="lg"
+            >
+              Add New Product
             </Button>
           </Flex>
         </Box>

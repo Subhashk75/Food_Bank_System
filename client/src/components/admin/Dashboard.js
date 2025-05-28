@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import {
   Box,
   Flex,
@@ -24,11 +23,13 @@ import Header from "../layout/Header";
 import Sidebar from "../layout/Sidebar";
 import Footer from "../layout/Footer";
 import Auth from "../utils/auth";
+import { inventoryService, productService, categoryService, transactionService } from "../utils/api";
 
 function Dashboard() {
-  const [data, setData] = useState([]);
+  const [transactions, setTransactions] = useState([]);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [productIndex, setProductIndex] = useState(null);
@@ -44,25 +45,42 @@ function Dashboard() {
   }, [navigate]);
 
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchData = async () => {
       try {
-        const [inventoryRes, productsRes, categoriesRes] = await Promise.all([
-          axios.get("/api/v1/inventory"),
-          axios.get("/api/v1/products"),
-          axios.get("/api/v1/getCategories")
+        setLoading(true);
+        setError(null);
+        
+        const results = await Promise.allSettled([
+          transactionService.getAll(),
+          productService.getAll(),
+          categoryService.getAll(),
+          inventoryService.getAll()
         ]);
 
-        setData(inventoryRes.data);
-        setProducts(productsRes.data);
-        setCategories(categoriesRes.data);
-        setLoading(false);
+        const [transactionsData, productsData, categoriesData, inventoryData] = results;
+
+        if (isMounted) {
+          setTransactions(transactionsData.status === 'fulfilled' ? transactionsData.value.data : []);
+          setProducts(productsData.status === 'fulfilled' ? productsData.value.data : []);
+          setCategories(categoriesData.status === 'fulfilled' ? categoriesData.value.data : []);
+          setInventory(inventoryData.status === 'fulfilled' ? inventoryData.value.data.inventory : []);
+          setLoading(false);
+        }
       } catch (err) {
-        setError(err);
-        setLoading(false);
+        if (isMounted) {
+          setError(err.message || 'Failed to fetch data');
+          setLoading(false);
+        }
       }
     };
 
     fetchData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleClick = (index) => {
@@ -75,12 +93,14 @@ function Dashboard() {
     }
   };
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p>Error: {error.message}</p>;
+  if (loading) return <Text>Loading...</Text>;
+  if (error) return <Text>Error: {error}</Text>;
 
   const totalProducts = products.length;
   const totalCategories = categories.length;
-  const totalQuantity = products.reduce((sum, product) => sum + product.quantity, 0);
+  const totalQuantity = Array.isArray(inventory) 
+    ? inventory.reduce((sum, item) => sum + (item.quantity || 0), 0)
+    : 0;
 
   return (
     <Flex direction="column" minHeight="100vh">
@@ -89,25 +109,25 @@ function Dashboard() {
         <Sidebar />
         <Box bg={bg} borderRadius="md" flex="1" p={5}>
           <Stack spacing={4}>
-            <Flex justify="space-between">
-              <Stat>
+            <Flex justify="space-between" flexWrap="wrap" gap={4}>
+              <Stat minW="150px">
                 <StatLabel>Total Products</StatLabel>
                 <StatNumber>{totalProducts}</StatNumber>
                 <StatHelpText>Available in inventory</StatHelpText>
               </Stat>
-              <Stat>
+              <Stat minW="150px">
                 <StatLabel>Total Categories</StatLabel>
                 <StatNumber>{totalCategories}</StatNumber>
                 <StatHelpText>Product categories</StatHelpText>
               </Stat>
-              <Stat>
+              <Stat minW="150px">
                 <StatLabel>Total Quantity</StatLabel>
                 <StatNumber>{totalQuantity}</StatNumber>
                 <StatHelpText>Total kg in stock</StatHelpText>
               </Stat>
             </Flex>
             <Box overflowX="auto">
-              {data.length > 0 ? (
+              {transactions.length > 0 ? (
                 <Table variant="simple">
                   <Thead>
                     <Tr>
@@ -126,44 +146,44 @@ function Dashboard() {
                     </Tr>
                   </Thead>
                   <Tbody>
-                    {data.map((transaction, index) => (
-                      <React.Fragment key={index}>
-                        <Tr onClick={() => handleClick(index)} style={{ cursor: "pointer" }}>
-                          <Td>
-                            {transaction.operation === "Receive" ? (
-                              <MdCallReceived color="green" />
-                            ) : (
-                              <MdCallMade color="red" />
+                    {transactions.map((transaction, index) => {
+                      const products = transaction.products || [];
+                      return (
+                        <React.Fragment key={index}>
+                          <Tr onClick={() => handleClick(index)} style={{ cursor: "pointer" }}>
+                            <Td>
+                              {transaction.operation === "Receive" ? (
+                                <MdCallReceived color="green" />
+                              ) : (
+                                <MdCallMade color="red" />
+                              )}
+                            </Td>
+                            {!isMobile && <Td>{transaction.operation}</Td>}
+                            <Td>{products.length}</Td>
+                            <Td>{transaction.unit}</Td>
+                            <Td>
+                              {products
+                                .reduce((sum, product) => sum + (product.quantity * transaction.unit), 0)}
+                            </Td>
+                            {!isMobile && (
+                              <>
+                                <Td>{transaction.purpose}</Td>
+                                <Td>{transaction.batchSize}</Td>
+                                <Td>{new Date(transaction.createdAt).toLocaleDateString()}</Td>
+                              </>
                             )}
-                          </Td>
-                          {!isMobile && <Td>{transaction.operation}</Td>}
-                          <Td>{transaction.product.length}</Td>
-                          <Td>{transaction.unit}</Td>
-                          <Td>
-                            {transaction.product
-                              .map(product => product.quantity * transaction.unit)
-                              .reduce((sum, quantity) => sum + quantity, 0)}
-                          </Td>
-                          {!isMobile && (
-                            <>
-                              <Td>{transaction.purpose}</Td>
-                              <Td>{transaction.batchSize}</Td>
-                              <Td>{new Date(transaction.createdAt).toLocaleDateString()}</Td>
-                            </>
+                          </Tr>
+                          {clicked && productIndex === index && (
+                            <OpenProductList data={products} unit={transaction.unit} />
                           )}
-                        </Tr>
-                        {clicked && productIndex === index && (
-                          <OpenProductList data={transaction.product} unit={transaction.unit} />
-                        )}
-                      </React.Fragment>
-                    ))}
+                        </React.Fragment>
+                      );
+                    })}
                   </Tbody>
                 </Table>
               ) : (
                 <Text>No transactions available</Text>
               )}
-              {loading && <Text>Loading...</Text>}
-              {error && <Text>Error: {error.message}</Text>}
             </Box>
           </Stack>
         </Box>
@@ -174,6 +194,8 @@ function Dashboard() {
 }
 
 function OpenProductList({ data, unit }) {
+  if (!Array.isArray(data)) return null;
+
   return (
     <>
       <Tr>
